@@ -1,6 +1,4 @@
-# ALGA Cloud Classification Model
-# A deep learning model for cloud classification using ALGA (Adaptive Local-Global Attention) mechanism
-# Combined with DenseNet, Vision Transformer, and Dynamic Multi-Head Attention
+
 
 import torch
 import os
@@ -31,7 +29,7 @@ logging.basicConfig(filename='training_log.log', level=logging.INFO)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # Dataset paths
-dataset_path = r'GCD/fake'
+dataset_path = r'GCD'
 
 def remove_hidden_folders(path):
     """Remove hidden folders from dataset path"""
@@ -60,11 +58,10 @@ def print_class_distribution(dataset, name):
     class_counts = Counter(labels)
     print(f"{name} class distribution: {class_counts}")
 
-# Data transforms - 修正为实时增强
 data_transforms = {
     'train': transforms.Compose([
         transforms.Resize((256, 256)),
-        transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),  # 添加实时颜色抖动
+        transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
         transforms.RandomRotation(20),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
@@ -78,7 +75,6 @@ data_transforms = {
 }
 
 class TransformSubset(Subset):
-    """带变换的子集类"""
     def __init__(self, dataset, indices, transform=None):
         super().__init__(dataset, indices)
         self.transform = transform
@@ -214,7 +210,6 @@ class ALGANet(nn.Module):
         global_out = self.sigmoid(fc2_out)
         return global_out.view(x.size(0), -1, 1, 1)
 
-# 修正后的模型类名
 class ALGA_DenseNet(nn.Module):
     """ALGA-DenseNet: Cloud Classification Model with ALGA and Dynamic Multi-Head Attention"""
     def __init__(self, num_classes=7):
@@ -226,54 +221,42 @@ class ALGA_DenseNet(nn.Module):
         self.alganet = ALGANet(256)
         self.channel_adjust = nn.Conv2d(256, 3, 1)
         
-        # 修正后的ViT集成
         self.vit = vit_b_16(weights=ViT_B_16_Weights.IMAGENET1K_V1)
-        # 保留ViT的编码器部分，移除分类头
         self.vit.heads.head = nn.Identity()
         
         self.dma = DynamicMultiHeadAttention(num_heads=8, d_model=768)
         self.classifier = nn.Linear(768, num_classes)
 
     def forward(self, x):
-        # DenseNet特征提取
         x = self.dense_net(x)
         x = F.relu(x, inplace=True)
         x = F.adaptive_avg_pool2d(x, (224, 224))
         x = self.transition(x)
         
-        # 混合卷积和深度可分离卷积
         x = self.mixed_conv(x)
         x = self.depthwise_conv(x)
         
-        # ALGA注意力机制
         x = self.alganet(x)
         
-        # 调整通道数以适配ViT
         x = self.channel_adjust(x)
         
-        # 修正后的ViT处理 - 获取序列特征而不是分类特征
-        # 使用ViT的内部处理来获取patch embeddings序列
         x = self.vit._process_input(x)
         n = x.shape[0]
         
-        # 添加class token
         batch_class_token = self.vit.class_token.expand(n, -1, -1)
         x = torch.cat([batch_class_token, x], dim=1)
         
-        # 添加位置编码
         x = x + self.vit.encoder.pos_embedding
         x = self.vit.encoder.dropout(x)
         
-        # 通过Transformer编码器层
         x = self.vit.encoder.layers(x)
         x = self.vit.encoder.ln(x)
         
-        # 现在x是序列数据，形状为[batch_size, num_patches + 1, 768]
-        # 适合输入到DMA
+
         x = self.dma(x, x, x, None)
         
-        # 取出class token用于分类
-        x = x[:, 0, :]  # 选择第一个token (class token)
+
+        x = x[:, 0, :]
         
         x = self.classifier(x)
         return x
@@ -431,15 +414,12 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 if __name__ == "__main__":
-    # 移除隐藏文件夹
     if os.path.exists(dataset_path):
         remove_hidden_folders(dataset_path)
 
-    # 直接使用原始数据集，不进行预生成增强
     total_dataset = datasets.ImageFolder(dataset_path, transform=None)
     train_idx, val_idx, test_idx = stratified_split(total_dataset, 0.7, 0.2, 0.1)
 
-    # 创建带变换的子集
     train_dataset = TransformSubset(total_dataset, train_idx, transform=data_transforms['train'])
     validation_dataset = TransformSubset(total_dataset, val_idx, transform=data_transforms['val'])
     test_dataset = TransformSubset(total_dataset, test_idx, transform=data_transforms['val'])
@@ -448,7 +428,6 @@ if __name__ == "__main__":
     validation_loader = DataLoader(validation_dataset, batch_size=16, shuffle=False, num_workers=4)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=4)
 
-    # 使用修正后的模型类名
     model = ALGA_DenseNet(num_classes=7).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
@@ -466,5 +445,6 @@ if __name__ == "__main__":
     history = train_model(model, train_loader, validation_loader, criterion, optimizer)
     evaluate_model(model, test_loader)
     torch.save(model.state_dict(), 'ALGA_DenseNet_model.pth')
+
 
     print("Training and evaluation completed successfully!")
