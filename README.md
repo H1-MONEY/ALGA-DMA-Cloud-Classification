@@ -4,7 +4,7 @@
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/
+git clone https://github.com/H1-MONEY/ALGA-DMA-Cloud-Classification/tree/main
 cd ALGA-Cloud-Classification
 ```
 
